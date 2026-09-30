@@ -26,7 +26,9 @@
           # 让 .venv 里的 python 优先
           export UV_PYTHON=3.13
           # export HSA_OVERRIDE_GFX_VERSION=10.3.0
-          # 完善动态链接库路径，加入 numactl 和系统 C 库
+          # 完善动态链接库路径，加入 numactl 和 C 库
+          # 注意：不要把 pkgs.glibc 放进来，否则会覆盖系统 glibc，
+          # 导致系统工具报 GLIBC_x.xx not found
           export LD_LIBRARY_PATH="${
             pkgs.lib.makeLibraryPath [
               pkgs.stdenv.cc.cc.lib
@@ -34,7 +36,6 @@
               pkgs.zstd
               pkgs.glib
               pkgs.numactl
-              pkgs.glibc
             ]
           }''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
