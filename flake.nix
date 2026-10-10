@@ -13,6 +13,7 @@
           git
           python313Packages.pip
           ruff
+          ty
 
           stdenv.cc.cc.lib
           zlib
