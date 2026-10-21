@@ -9,6 +9,29 @@
 # architecture preset for every RDNA generation. Without that node the
 # launcher still works, it just leaves MIOpen on its own defaults.
 #
+# Four messages show up in the log that are expected here and can be
+# ignored:
+#
+#   [CFZ Load] No cache files found
+#       CFZ-Caching prints this while its cache directory is still empty.
+#       Run a workflow with CFZ Save once, or drop the CFZ Load nodes.
+#
+#   '_POSIX_C_SOURCE' redefined
+#       The nixpkgs python3.13 headers define it as 200809L and the nix
+#       glibc 2.44 headers as 202405L, and triton's driver.c pulls in both.
+#       Cosmetic, printed once per kernel compile and cached after that.
+#       GCC has no flag for it, -Wcpp only covers #warning directives.
+#
+#   MIOpen(HIP): Warning [ParseAndLoadDb] File is unreadable: gfx1030_30.HIP.fdb.txt
+#       The ROCm SDK ships the gfx1030_36 database, which is the wavefront
+#       this card runs, but not the wavefront 30 one MIOpen also asks for.
+#       A packaging gap in the wheel, it shows up with or without the
+#       MIOpen profile.
+#
+#   xnack 'Off' was requested for a processor that does not support it
+#       XNACK is a CDNA feature and this is RDNA2. The HSA runtime always
+#       says this.
+#
 # Environment overrides:
 #   COMFYUI_ROOT                 project directory (default: this script's dir)
 #   COMFYUI_PYTHON               interpreter (default: $COMFYUI_ROOT/.venv/bin/python)
