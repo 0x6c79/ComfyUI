@@ -4,30 +4,26 @@
 #
 #   ./setup-env.sh [venv-dir]
 #
-# The ROCm wheel index is chosen with COMFYUI_ROCM_INDEX. The default is the
-# stable ROCm 7.14 channel, which ships a release torch build and a triton
-# that still targets gfx1030.
+# Packages come from AMD's multi-arch ROCm wheel index, the one the ROCm
+# install docs point at. The device extra keeps the install to the GPU that
+# is actually present, so only that architecture's kernels are pulled in.
 #
 # Environment overrides:
-#   COMFYUI_ROCM_INDEX   pytorch wheel index (default: stable rocm7.14)
+#   COMFYUI_ROCM_INDEX   ROCm wheel index (default: AMD multi-arch)
 #   COMFYUI_ROCM_ARCH    gfx arch to target, skips detection
-#   COMFYUI_TRITON       triton version to pin (default: 3.8.0)
 #   COMFYUI_UV           uv binary to use
 #
-# Two things this gets right that a plain "pip install torch" does not:
-#
-#   - triton 3.9 dropped gfx1030 (RDNA2) as a compilation target, so every
-#     triton kernel fails to build on those cards. triton is pinned instead.
-#   - the torch wheel depends on the rocm meta package, whose device-all
-#     extra pulls a device package for every architecture AMD supports. Only
-#     the one for the detected GPU is kept, ~0.8GB instead of ~11GB.
+# Note on triton: ROCm builds that ship triton 3.9 dropped gfx1030 (RDNA2) as
+# a compilation target, which breaks every triton kernel on those cards. The
+# AMD index still pairs torch with triton 3.8, and the verification step at
+# the end fails loudly if a build ever pairs them with a triton that no
+# longer targets the card.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV="${1:-$REPO_ROOT/.venv}"
-INDEX="${COMFYUI_ROCM_INDEX:-https://download.pytorch.org/whl/rocm7.14/}"
-TRITON="${COMFYUI_TRITON:-3.8.0}"
+INDEX="${COMFYUI_ROCM_INDEX:-https://repo.amd.com/rocm/whl-multi-arch/}"
 PYTHON="${COMFYUI_PYTHON:-python3.13}"
 
 if ! command -v "$PYTHON" >/dev/null; then
@@ -66,32 +62,21 @@ if [[ ! "$ARCH" =~ ^gfx[0-9]+ ]]; then
 fi
 echo "=== GPU 架构: $ARCH ==="
 
-echo "=== 安装 torch / ROCm / triton ==="
-# torch and torchvision are installed without dependencies. Their metadata
-# asks for rocm[device-all], which would pull a device package for every
-# architecture AMD supports.
-"$UV" pip install --python "$PY" --index-url "$INDEX" torch torchvision --no-deps
+echo "=== 安装 torch / torchvision (device=$ARCH) ==="
 "$UV" pip install --python "$PY" --index-url "$INDEX" \
-    "rocm-sdk-libraries" "rocm-sdk-device-$ARCH" "triton-rocm==$TRITON" \
-    filelock fsspec jinja2 markupsafe mpmath networkx sympy typing-extensions setuptools
+    "torch[device-$ARCH]" "torchvision[device-$ARCH]"
+
+printf 'torch==%s\ntorchvision==%s\n' \
+    "$("$PY" -c 'import importlib.metadata as m; print(m.version("torch"))')" \
+    "$("$PY" -c 'import importlib.metadata as m; print(m.version("torchvision"))')" \
+    > "$VENV/constraints.txt"
 
 echo "=== 安装 ComfyUI 依赖 ==="
 grep -vE '^\s*(torch|torchvision|torchaudio|triton)\s*([=<>!~]|$)' -i \
     "$REPO_ROOT/requirements.txt" > "$VENV/requirements-nontorch.txt"
-
-# Resolve the whole graph first, then drop the device packages for the
-# architectures this GPU will never run on.
-"$UV" pip compile --python "$PY" \
-    --index-url "$INDEX" --extra-index-url https://pypi.org/simple \
+"$UV" pip install --python "$PY" --index-url https://pypi.org/simple \
     --index-strategy unsafe-best-match \
-    --output-file "$VENV/requirements-resolved.txt" \
-    "$VENV/requirements-nontorch.txt" >/dev/null
-grep -v '^rocm-sdk-device-gfx' "$VENV/requirements-resolved.txt" > "$VENV/requirements-slim.txt"
-echo "rocm-sdk-device-$ARCH==$(grep -oE '[0-9][0-9.]*$' <<< "$(sed -n "s/^rocm-sdk-device-$ARCH==//p" "$VENV/requirements-resolved.txt")" | head -1)" >> "$VENV/requirements-slim.txt"
-
-"$UV" pip install --python "$PY" --no-deps \
-    --index-url "$INDEX" --extra-index-url https://pypi.org/simple \
-    --index-strategy unsafe-best-match -r "$VENV/requirements-slim.txt"
+    --constraint "$VENV/constraints.txt" -r "$VENV/requirements-nontorch.txt"
 "$UV" pip install --python "$PY" --index-url https://pypi.org/simple \
     -r "$REPO_ROOT/manager_requirements.txt"
 
