@@ -19,7 +19,6 @@
         zlib
         zstd
         glib
-        glibc
         numactl
       ];
 
@@ -40,41 +39,13 @@
           ]
         }''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
+        # 启动 ComfyUI：按 GPU 架构设置 MIOpen 环境并选择启动参数
+        run-comfyui() {
+          local root
+          root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+          COMFYUI_ROOT="$root" "$root/run-comfyui.sh" "$@"
+        }
       '';
     };
   };
 }
-# {
-#   description = "ComfyUI development shell";
-#   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-#   outputs =
-#     { self, nixpkgs }:
-#     let
-#       system = "x86_64-linux";
-#       pkgs = nixpkgs.legacyPackages.${system};
-#       runtimeLibs = with pkgs; [
-#         stdenv.cc.cc.lib
-#         zlib
-#         zstd
-#         glib
-#         numactl
-#       ];
-#     in
-#     {
-#       devShells.${system}.default = pkgs.mkShell {
-#         packages = with pkgs; [
-#           python313
-#           git
-#           ruff
-#           uv
-#         ];
-#         shellHook = ''
-#           export UV_PYTHON=3.13
-#           run-comfyui() {
-#             LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}:$LD_LIBRARY_PATH" \
-#               python main.py "$@"
-#           }
-#         '';
-#       };
-#     };
-# }
