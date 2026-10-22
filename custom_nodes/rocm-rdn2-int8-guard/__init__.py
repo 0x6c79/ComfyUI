@@ -57,5 +57,9 @@ def _patched(device=None):
 
 _ORIGINAL = comfy.ops.get_disabled_quant_formats
 comfy.ops.get_disabled_quant_formats = _patched
+
+# this module registers no nodes, it only adjusts the capability detection
+NODE_CLASS_MAPPINGS = {}
+
 _log.error("[rocm-rdn2-int8-guard] int8 formats forced to the emulated path: %s",
            sorted(_EXTRA_DISABLED))
