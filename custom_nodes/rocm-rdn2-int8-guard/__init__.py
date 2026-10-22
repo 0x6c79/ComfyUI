@@ -25,6 +25,8 @@ from _EXTRA_DISABLED and the native path becomes usable again.
 import logging
 
 import torch
+from comfy_api.latest import ComfyExtension, io
+from typing_extensions import override
 
 import comfy.model_management
 import comfy.ops
@@ -37,29 +39,39 @@ _EXTRA_DISABLED = {"convrot_w4a4", "w6a8_int8"}
 # architectures without int8 GEMM kernels
 _RDNA2_PREFIXES = ("gfx101", "gfx102", "gfx103")
 
+_original_get_disabled_quant_formats = comfy.ops.get_disabled_quant_formats
 
-def _is_rdn2(device=None):
+
+def _is_rdn2():
     try:
         if not comfy.model_management.is_amd():
             return False
-        props = torch.cuda.get_device_properties(comfy.model_management.get_torch_device())
-        return props.gcnArchName.split(":")[0].startswith(_RDNA2_PREFIXES)
+        device = comfy.model_management.get_torch_device()
+        arch = torch.cuda.get_device_properties(device).gcnArchName.split(":")[0]
+        return arch.startswith(_RDNA2_PREFIXES)
     except Exception:
         return False
 
 
-def _patched(device=None):
-    disabled = set(_ORIGINAL(device))
-    if _is_rdn2(device):
+def _get_disabled_quant_formats(device=None):
+    disabled = set(_original_get_disabled_quant_formats(device))
+    if _is_rdn2():
         disabled |= _EXTRA_DISABLED
     return disabled
 
 
-_ORIGINAL = comfy.ops.get_disabled_quant_formats
-comfy.ops.get_disabled_quant_formats = _patched
+class Rdn2Int8GuardExtension(ComfyExtension):
+    @override
+    async def on_load(self) -> None:
+        comfy.ops.get_disabled_quant_formats = _get_disabled_quant_formats
+        if _is_rdn2():
+            _log.info("int8 formats without a GEMM kernel on this GPU, forced to "
+                      "the emulated path: %s", ", ".join(sorted(_EXTRA_DISABLED)))
 
-# this module registers no nodes, it only adjusts the capability detection
-NODE_CLASS_MAPPINGS = {}
+    @override
+    async def get_node_list(self) -> list[type[io.ComfyNode]]:
+        return []
 
-_log.error("[rocm-rdn2-int8-guard] int8 formats forced to the emulated path: %s",
-           sorted(_EXTRA_DISABLED))
+
+async def comfy_entrypoint() -> Rdn2Int8GuardExtension:
+    return Rdn2Int8GuardExtension()
