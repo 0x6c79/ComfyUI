@@ -7,6 +7,10 @@ __pycache__/
 /temp/
 /custom_nodes/
 !custom_nodes/example_node.py.example
+# kept in the repo: it keeps the int8 formats that have no GEMM kernel on
+# RDNA2 out of the native path
+!/custom_nodes/rocm-rdn2-int8-guard/
+!/custom_nodes/rocm-rdn2-int8-guard/__init__.py
 extra_model_paths.yaml
 /.vs
 .vscode/
