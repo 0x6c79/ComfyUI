@@ -28,6 +28,14 @@
 #       A packaging gap in the wheel, it shows up with or without the
 #       MIOpen profile.
 #
+#   MIOpen: Warning [OpenRuntimeLibraryForDevice] CK grouped conv library not
+#   found for device gfx1030: libMIOpenCKGroupedConv_gfx1030.so
+#       MIOpen probes for a per-architecture Composable Kernel library when
+#       it opens the device. The composable kernel path only exists for
+#       RDNA3 and up, so there is nothing to find for this card and MIOpen
+#       falls back to its regular convolution path. No environment variable
+#       turns the probe off, it prints once per process.
+#
 #   xnack 'Off' was requested for a processor that does not support it
 #       XNACK is a CDNA feature and this is RDNA2. The HSA runtime always
 #       says this.
