@@ -1,5 +1,5 @@
 {
-  description = "ComfyUI - NixOS + ROCm 7.2";
+  description = "ComfyUI - NixOS + ROCm";
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   outputs = {
     self,
