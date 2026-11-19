@@ -11,13 +11,14 @@
 # Environment overrides:
 #   COMFYUI_ROCM_INDEX   ROCm wheel index (default: AMD stable whl-next)
 #   COMFYUI_ROCM_ARCH    gfx arch to target, skips detection
+#   COMFYUI_ROCM_VERSION ROCm version (default: 10.2.0)
 #   COMFYUI_UV           uv binary to use
 #
-# Note on triton: ROCm builds that ship triton 3.9 dropped gfx1030 (RDNA2) as
-# a compilation target, which breaks every triton kernel on those cards. The
-# stable index still pairs torch with triton 3.8, and the verification step
-# at the end fails loudly if a build ever pairs them with a triton that no
-# longer targets the card.
+# Note on triton: the 10.2 wheels pair torch with triton 3.9, which cannot
+# compile kernels for gfx1030 (RDNA2). torch pins that triton version exactly,
+# so do not override it here; use the 7.2 environment for triton kernels on
+# this card. The verification step at the end fails loudly if a build ever
+# pairs the card with a triton that no longer targets it.
 
 set -euo pipefail
 
@@ -28,10 +29,10 @@ INDEX="${COMFYUI_ROCM_INDEX:-https://stable.repo.amd.com/rocm/whl-next/}"
 # can show up without a matching torchvision for the same ROCm release, and
 # a mismatched pair dies at import with "operator torchvision::nms does not
 # exist". Pin all three, they only differ in the ROCm suffix.
-ROCM="${COMFYUI_ROCM_VERSION:-10.1.0}"
-TORCH_VERSION="${COMFYUI_TORCH_VERSION:-2.13.0+rocm${ROCM}}"
-TORCHVISION_VERSION="${COMFYUI_TORCHVISION_VERSION:-0.28.0+rocm${ROCM}}"
-TORCHAUDIO_VERSION="${COMFYUI_TORCHAUDIO_VERSION:-2.11.0.2+rocm${ROCM}}"
+ROCM="${COMFYUI_ROCM_VERSION:-10.2.0}"
+TORCH_VERSION="${COMFYUI_TORCH_VERSION:-2.15.0+rocm${ROCM}}"
+TORCHVISION_VERSION="${COMFYUI_TORCHVISION_VERSION:-0.29.2+rocm${ROCM}}"
+TORCHAUDIO_VERSION="${COMFYUI_TORCHAUDIO_VERSION:-2.11.1+rocm${ROCM}}"
 PYTHON="${COMFYUI_PYTHON:-python3.13}"
 
 if ! command -v "$PYTHON" >/dev/null; then
@@ -114,21 +115,24 @@ except ImportError:
     print("  torchaudio not installed")
 
 
-@triton.jit
-def _probe(x_ptr, y_ptr, n, BLOCK: tl.constexpr):
-    pid = tl.program_id(0)
-    offs = pid * BLOCK + tl.arange(0, BLOCK)
-    mask = offs < n
-    tl.store(y_ptr + offs, tl.load(x_ptr + offs, mask=mask) * 2.0, mask=mask)
+if props.gcnArchName.startswith("gfx10") and triton.__version__.startswith("3.9"):
+    print("  triton kernel skipped: triton 3.9 does not target RDNA2")
+    print("  use the 7.2 environment for triton kernels on this card")
+else:
+    @triton.jit
+    def _probe(x_ptr, y_ptr, n, BLOCK: tl.constexpr):
+        pid = tl.program_id(0)
+        offs = pid * BLOCK + tl.arange(0, BLOCK)
+        mask = offs < n
+        tl.store(y_ptr + offs, tl.load(x_ptr + offs, mask=mask) * 2.0, mask=mask)
 
-
-n = 4096
-x = torch.randn(n, device="cuda")
-y = torch.empty_like(x)
-_probe[(n // 256,)](x, y, n, BLOCK=256)
-torch.cuda.synchronize()
-assert torch.allclose(y, x * 2), "triton kernel produced wrong results"
-print("  triton kernel on this GPU: OK")
+    n = 4096
+    x = torch.randn(n, device="cuda")
+    y = torch.empty_like(x)
+    _probe[(n // 256,)](x, y, n, BLOCK=256)
+    torch.cuda.synchronize()
+    assert torch.allclose(y, x * 2), "triton kernel produced wrong results"
+    print("  triton kernel on this GPU: OK")
 PY
 "$PY" "$probe"
 rm -f "$probe"
